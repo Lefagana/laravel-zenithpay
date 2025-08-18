@@ -3,44 +3,46 @@
 namespace ZenithPay\Services;
 
 use Illuminate\Support\Facades\Http;
+use Illuminate\Http\Client\RequestException;
 
 class ZenithPayClient
 {
     protected $baseUrl;
-    protected $merchantId;
     protected $secretKey;
 
     public function __construct($baseUrl, $merchantId, $secretKey)
     {
         $this->baseUrl = rtrim($baseUrl, '/');
-        $this->merchantId = $merchantId;
         $this->secretKey = $secretKey;
     }
 
     protected function headers()
     {
         return [
-            'Authorization' => 'Bearer ' . $this->secretKey,
             'Accept' => 'application/json',
+            'Authorization' => 'Bearer ' . $this->secretKey,
             'Content-Type' => 'application/json',
+            'Accept-Encoding' => 'gzip,deflate',
         ];
     }
 
-    /** Create Virtual Account */
-    public function createVirtualAccount(array $data)
+    /**
+     * Create Dedicated Virtual Account
+     *
+     * @param array $data
+     * @return array
+     *
+     * @throws RequestException
+     */
+    public function createDedicatedAccount(array $data): array
     {
-        return Http::withHeaders($this->headers())
-            ->post("{$this->baseUrl}/virtual-accounts", array_merge($data, [
-                'merchant_id' => $this->merchantId,
-            ]))
-            ->json();
-    }
+        $response = Http::withHeaders($this->headers())
+            ->post("{$this->baseUrl}/api/dedicated_account/assign", $data);
 
-    /** Verify Account/Transaction */
-    public function verifyTransaction(string $transactionId)
-    {
-        return Http::withHeaders($this->headers())
-            ->get("{$this->baseUrl}/transactions/{$transactionId}")
-            ->json();
+        if ($response->failed()) {
+            throw new RequestException($response);
+        }
+
+        return $response->json();
     }
 }
