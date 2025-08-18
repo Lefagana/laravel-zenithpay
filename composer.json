@@ -1,0 +1,31 @@
+{
+    "name": "zenithpay/laravel-zenithpay",
+    "description": "Laravel package for ZenithPay virtual account gateway",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Malah Lefagana",
+            "email": "malahmusalg@gmail.com"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "ZenithPay\\": "src/"
+        }
+    },
+      "require": {
+        "php": ">=8.0",
+        "illuminate/support": "^10.0|^11.0"
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "ZenithPay\\ZenithPayServiceProvider"
+            ],
+            "aliases": {
+                "ZenithPay": "ZenithPay\\Facades\\ZenithPay"
+            }
+        }
+    }
+}
