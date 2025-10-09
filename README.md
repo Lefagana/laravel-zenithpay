@@ -8,7 +8,7 @@ composer require zenithpay/laravel-zenithpay
 
 php artisan vendor:publish --tag=zenithpay-config
 
-bash
+```bash
 ZENITHPAY_BASE_URL=https://zenithpay.ng
 ZENITHPAY_SECRET_KEY=your_secret_key
 
