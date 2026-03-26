@@ -37,6 +37,15 @@ ZENITHPAY_BASE_URL=https://zenithpay.ng
 ZENITHPAY_MERCHANT_ID=your_merchant_id
 ZENITHPAY_SECRET_KEY=your_secret_key
 ZENITHPAY_WEBHOOK_SECRET=your_webhook_secret
+ZENITHPAY_HTTP_TIMEOUT=30
+ZENITHPAY_HTTP_RETRY_TIMES=2
+ZENITHPAY_HTTP_RETRY_SLEEP=500
+ZENITHPAY_WEBHOOK_ALLOWED_IPS=1.2.3.4,5.6.7.8
+ZENITHPAY_WEBHOOK_TRUSTED_PROXIES=
+ZENITHPAY_WEBHOOK_SIGNATURE_TTL=300
+ZENITHPAY_WEBHOOK_ROUTES_ENABLED=true
+ZENITHPAY_WEBHOOK_ROUTE_PREFIX=/zenithpay/webhooks
+ZENITHPAY_WEBHOOK_MIDDLEWARE=api
 ```
 
 **Getting Your API Credentials:**
@@ -55,6 +64,26 @@ return [
     'merchant_id' => env('ZENITHPAY_MERCHANT_ID'),
     'secret_key' => env('ZENITHPAY_SECRET_KEY'),
     'webhook_secret' => env('ZENITHPAY_WEBHOOK_SECRET'),
+
+    'timeout' => env('ZENITHPAY_HTTP_TIMEOUT', 30),
+
+    'retry' => [
+        'times' => env('ZENITHPAY_HTTP_RETRY_TIMES', 2),
+        'sleep' => env('ZENITHPAY_HTTP_RETRY_SLEEP', 500),
+    ],
+
+    'webhook' => [
+        'secret' => env('ZENITHPAY_WEBHOOK_SECRET'),
+        'allowed_ips' => array_values(array_filter(array_map('trim', explode(',', env('ZENITHPAY_WEBHOOK_ALLOWED_IPS', ''))))),
+        'trusted_proxies' => array_values(array_filter(array_map('trim', explode(',', env('ZENITHPAY_WEBHOOK_TRUSTED_PROXIES', ''))))),
+        'signature_ttl' => env('ZENITHPAY_WEBHOOK_SIGNATURE_TTL', 300),
+        'handler' => \ZenithPay\Services\DefaultWebhookHandler::class,
+        'middleware' => array_values(array_filter(array_map('trim', explode(',', env('ZENITHPAY_WEBHOOK_MIDDLEWARE', 'api'))))),
+        'routes' => [
+            'enabled' => env('ZENITHPAY_WEBHOOK_ROUTES_ENABLED', true),
+            'prefix' => env('ZENITHPAY_WEBHOOK_ROUTE_PREFIX', '/zenithpay/webhooks'),
+        ],
+    ],
 ];
 ```
 
@@ -100,6 +129,53 @@ public function createAccount()
         ], $e->response->status());
     }
 }
+```
+
+### Pay With Transfer (PWT)
+
+```php
+use ZenithPay\Facades\ZenithPay;
+
+$response = ZenithPay::initializePwt([
+    'amount' => 1250.00,
+    'email' => 'customer@example.com',
+    'callback_url' => 'https://merchant.example.com/zenithpay/callback',
+    'meta_data' => [
+        'order_id' => 'ORDER-12345',
+    ],
+], [
+    'Idempotency-Key' => 'ORDER-12345',
+]);
+```
+
+### Query PWT Status
+
+```php
+use ZenithPay\Facades\ZenithPay;
+
+$response = ZenithPay::queryPwtStatus([
+    'order_no' => 'PALMPAY_ORDER_NO',
+]);
+```
+
+### Query PWT Callback Diagnostics
+
+```php
+use ZenithPay\Facades\ZenithPay;
+
+$response = ZenithPay::queryPwtCallbackDiagnostics([
+    'order_id' => 'ZTSPWT-...',
+]);
+```
+
+### Retry PWT Callback
+
+```php
+use ZenithPay\Facades\ZenithPay;
+
+$response = ZenithPay::retryPwtCallback([
+    'order_no' => 'PALMPAY_ORDER_NO',
+]);
 ```
 
 ### Using Dependency Injection
@@ -184,6 +260,112 @@ $response = ZenithPay::createDedicatedAccount([
 | bank | string | Bank provider for the virtual account |
 | account_name | string | The registered account name |
 | status | string | Account status (Enabled/Disabled) |
+
+### Initialize PWT
+
+**Method:** `initializePwt(array $data): array`
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| amount | number | Yes | Amount in NGN (major units) |
+| email | string | Yes | Customer email |
+| callback_url | string | No | Merchant callback URL for status updates |
+| meta_data | array | No | Optional metadata |
+
+### Query PWT Status
+
+**Method:** `queryPwtStatus(array $data): array`
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| order_id | string | No | ZenithPay order ID |
+| order_no | string | No | Provider order number |
+
+### Query PWT Callback Diagnostics
+
+**Method:** `queryPwtCallbackDiagnostics(array $data): array`
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| order_id | string | No | ZenithPay order ID |
+| order_no | string | No | Provider order number |
+
+### Retry PWT Callback
+
+**Method:** `retryPwtCallback(array $data): array`
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| order_id | string | No | ZenithPay order ID |
+| order_no | string | No | Provider order number |
+
+## Webhooks
+
+The package ships with optional webhook routes and a verifier that matches ZenithPay's signature scheme:
+
+- Signature: `sha256(<timestamp>.<raw_body>, <ZENITHPAY_WEBHOOK_SECRET>)`
+- Headers: `X-Zenithpay-Event`, `X-Zenithpay-Event-Id`, `X-Zenithpay-Timestamp`, `X-Zenithpay-Signature`, `X-Zenithpay-Source-IP`
+
+### Enable Routes
+
+By default, the package registers:
+
+- `POST /zenithpay/webhooks/pwt`
+- `POST /zenithpay/webhooks/virtual-account`
+
+You can change the prefix or disable route registration in config.
+
+### Custom Webhook Handler
+
+Create a handler to process verified payloads:
+
+```php
+namespace App\ZenithPay;
+
+use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\Response;
+use ZenithPay\Contracts\WebhookHandlerInterface;
+
+class MyWebhookHandler implements WebhookHandlerInterface
+{
+    public function handle(array $payload, string $event, Request $request): Response|array|null
+    {
+        // Update your order status, notify customers, etc.
+
+        return [
+            'status' => 'received',
+        ];
+    }
+}
+```
+
+Register it in `config/zenithpay.php`:
+
+```php
+'webhook' => [
+    'handler' => App\ZenithPay\MyWebhookHandler::class,
+],
+```
+
+### Webhook Event
+
+Every verified webhook also dispatches a Laravel event you can listen to:
+
+```php
+use ZenithPay\Events\ZenithPayWebhookReceived;
+
+Event::listen(ZenithPayWebhookReceived::class, function (ZenithPayWebhookReceived $event) {
+    // $event->payload, $event->event, $event->request
+});
+```
 
 ## Error Handling
 
